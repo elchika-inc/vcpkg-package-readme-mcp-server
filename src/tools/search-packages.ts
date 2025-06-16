@@ -5,7 +5,6 @@ import type {
 } from '../types/index.js';
 import { githubApi } from '../services/github-api.js';
 import { logger } from '../utils/logger.js';
-import { createError } from '../utils/error-handler.js';
 import { validateSearchPackagesParams } from '../utils/validators.js';
 import { cache } from '../services/cache.js';
 
@@ -40,11 +39,11 @@ export async function searchPackages(params: SearchPackagesParams): Promise<Sear
         if (pathParts.length >= 2 && pathParts[0] === 'ports') {
           const packageName = pathParts[1];
           
-          if (!packageName) continue;
+          if (!packageName) {continue;}
 
           // Get package info
           const portInfo = await githubApi.getVcpkgPortInfo(packageName);
-          if (!portInfo) continue;
+          if (!portInfo) {continue;}
 
           // Get portfile info for additional details
           const portfileInfo = await githubApi.getVcpkgPortfile(packageName);
@@ -128,18 +127,18 @@ function calculateScores(portInfo: any, upstreamRepo: any, searchScore: number):
   // Quality score based on package metadata completeness and upstream repository quality
   let qualityScore = 0.5; // Base score
   
-  if (portInfo.description) qualityScore += 0.1;
-  if (portInfo.homepage) qualityScore += 0.1;
-  if (portInfo.dependencies && portInfo.dependencies.length > 0) qualityScore += 0.1;
+  if (portInfo.description) {qualityScore += 0.1;}
+  if (portInfo.homepage) {qualityScore += 0.1;}
+  if (portInfo.dependencies && portInfo.dependencies.length > 0) {qualityScore += 0.1;}
   
   if (upstreamRepo) {
-    if (upstreamRepo.description) qualityScore += 0.05;
-    if (upstreamRepo.license) qualityScore += 0.1;
-    if (upstreamRepo.topics && upstreamRepo.topics.length > 0) qualityScore += 0.05;
+    if (upstreamRepo.description) {qualityScore += 0.05;}
+    if (upstreamRepo.license) {qualityScore += 0.1;}
+    if (upstreamRepo.topics && upstreamRepo.topics.length > 0) {qualityScore += 0.05;}
     
     // Penalize archived or disabled repositories
-    if (upstreamRepo.archived) qualityScore -= 0.2;
-    if (upstreamRepo.disabled) qualityScore -= 0.3;
+    if (upstreamRepo.archived) {qualityScore -= 0.2;}
+    if (upstreamRepo.disabled) {qualityScore -= 0.3;}
   }
   
   qualityScore = Math.max(0, Math.min(1, qualityScore));
@@ -170,16 +169,16 @@ function calculateScores(portInfo: any, upstreamRepo: any, searchScore: number):
     const pushedAt = new Date(upstreamRepo.pushed_at);
     const daysSinceUpdate = (now.getTime() - pushedAt.getTime()) / (1000 * 60 * 60 * 24);
     
-    if (daysSinceUpdate < 30) maintenanceScore = 1.0;
-    else if (daysSinceUpdate < 90) maintenanceScore = 0.8;
-    else if (daysSinceUpdate < 180) maintenanceScore = 0.6;
-    else if (daysSinceUpdate < 365) maintenanceScore = 0.4;
-    else maintenanceScore = 0.2;
+    if (daysSinceUpdate < 30) {maintenanceScore = 1.0;}
+    else if (daysSinceUpdate < 90) {maintenanceScore = 0.8;}
+    else if (daysSinceUpdate < 180) {maintenanceScore = 0.6;}
+    else if (daysSinceUpdate < 365) {maintenanceScore = 0.4;}
+    else {maintenanceScore = 0.2;}
     
     // Consider open issues
     const openIssues = upstreamRepo.open_issues_count || 0;
-    if (openIssues < 10) maintenanceScore += 0.1;
-    else if (openIssues > 100) maintenanceScore -= 0.1;
+    if (openIssues < 10) {maintenanceScore += 0.1;}
+    else if (openIssues > 100) {maintenanceScore -= 0.1;}
   }
   
   maintenanceScore = Math.max(0, Math.min(1, maintenanceScore));
@@ -221,9 +220,9 @@ function generateKeywords(portInfo: any, upstreamRepo: any): string[] {
     
     // Add some common dependency keywords
     for (const dep of portInfo.dependencies.slice(0, 3)) {
-      if (dep.includes('boost')) keywords.push('boost');
-      if (dep.includes('qt')) keywords.push('qt');
-      if (dep.includes('opencv')) keywords.push('opencv');
+      if (dep.includes('boost')) {keywords.push('boost');}
+      if (dep.includes('qt')) {keywords.push('qt');}
+      if (dep.includes('opencv')) {keywords.push('opencv');}
     }
   }
   

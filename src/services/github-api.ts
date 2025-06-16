@@ -194,13 +194,13 @@ export class GitHubApiClient {
     const info: VcpkgPortfileInfo = {};
 
     // Extract vcpkg_from_github information
-    const githubMatch = content.match(/vcpkg_from_github\s*\(\s*OUT_SOURCE_PATH\s+\w+\s+REPO\s+([^\/]+)\/([^\s]+)\s+REF\s+([^\s]+)\s+SHA512\s+([^\s\)]+)/s);
-    if (githubMatch) {
+    const githubMatch = content.match(/vcpkg_from_github\s*\(\s*OUT_SOURCE_PATH\s+\w+\s+REPO\s+([^/]+)\/([^\s]+)\s+REF\s+([^\s]+)\s+SHA512\s+([^\s)]+)/s);
+    if (githubMatch && githubMatch[1] && githubMatch[2] && githubMatch[3] && githubMatch[4]) {
       info.vcpkg_from_github = {
-        owner: githubMatch[1]!,
-        repo: githubMatch[2]!,
-        ref: githubMatch[3]!,
-        sha512: githubMatch[4]!,
+        owner: githubMatch[1],
+        repo: githubMatch[2],
+        ref: githubMatch[3],
+        sha512: githubMatch[4],
       };
     }
 
