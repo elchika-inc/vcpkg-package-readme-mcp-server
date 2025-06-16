@@ -7,7 +7,7 @@ import type {
 import { githubApi } from '../services/github-api.js';
 import { versionResolver } from '../services/version-resolver.js';
 import { logger } from '../utils/logger.js';
-import { createError } from '../utils/error-handler.js';
+// import { createError } from '../utils/error-handler.js';
 import { validateGetPackageInfoParams } from '../utils/validators.js';
 import { cache } from '../services/cache.js';
 
@@ -32,7 +32,25 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
     // Get package info from vcpkg.json
     const portInfo = await githubApi.getVcpkgPortInfo(package_name);
     if (!portInfo) {
-      throw createError('PACKAGE_NOT_FOUND', `Package ${package_name} not found in vcpkg registry`);
+      logger.info(`Package '${package_name}' not found in vcpkg registry`);
+      
+      // Return response with exists: false according to specification
+      const notFoundResponse: PackageInfoResponse = {
+        package_name,
+        latest_version: '',
+        description: '',
+        author: '',
+        license: '',
+        keywords: [],
+        download_stats: {
+          last_day: 0,
+          last_week: 0,
+          last_month: 0,
+        },
+        exists: false,
+      };
+      
+      return notFoundResponse;
     }
 
     // Get portfile info for additional details
@@ -65,8 +83,17 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
     if (include_dependencies && portInfo.dependencies) {
       dependencies = {};
       for (const dep of portInfo.dependencies) {
-        // Parse dependency string (may have features like "boost[system,filesystem]")
-        const depName = dep.split('[')[0] || dep;
+        let depName: string;
+        if (typeof dep === 'string') {
+          // Parse dependency string (may have features like "boost[system,filesystem]")
+          depName = dep.split('[')[0] || dep;
+        } else if (typeof dep === 'object' && dep !== null && 'name' in dep) {
+          // Handle dependency objects like { "name": "boost", "features": ["system"] }
+          depName = (dep as any).name;
+        } else {
+          // Skip invalid dependency entries
+          continue;
+        }
         dependencies[depName] = 'latest'; // vcpkg doesn't specify versions for dependencies
       }
     }
@@ -91,6 +118,7 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
       dev_dependencies: devDependencies,
       download_stats: downloadStats,
       repository,
+      exists: true,
     };
 
     // Cache the response
@@ -123,7 +151,7 @@ function generateRepositoryInfo(portfileInfo: any): RepositoryInfo | undefined {
   };
 }
 
-function getAuthor(portInfo: any, upstreamRepo: any): string {
+function getAuthor(_portInfo: any, upstreamRepo: any): string {
   if (upstreamRepo?.owner?.login) {
     return upstreamRepo.owner.login;
   }
@@ -137,7 +165,7 @@ function getLicense(upstreamRepo: any): string | undefined {
   return undefined;
 }
 
-function getKeywords(portInfo: any, upstreamRepo: any): string[] {
+function getKeywords(_portInfo: any, upstreamRepo: any): string[] {
   const keywords = ['vcpkg', 'cpp', 'c++', 'native'];
   
   // Add language from upstream repo

@@ -28,6 +28,7 @@ export interface PackageReadmeResponse {
   installation: InstallationInfo;
   basic_info: PackageBasicInfo;
   repository?: RepositoryInfo | undefined;
+  exists: boolean;
 }
 
 export interface PackageInfoResponse {
@@ -41,6 +42,7 @@ export interface PackageInfoResponse {
   dev_dependencies?: Record<string, string> | undefined;
   download_stats: DownloadStats;
   repository?: RepositoryInfo | undefined;
+  exists: boolean;
 }
 
 export interface SearchPackagesResponse {
@@ -119,14 +121,14 @@ export interface VcpkgPortInfo {
   version: string;
   description: string;
   homepage?: string;
-  dependencies?: string[];
+  dependencies?: (string | { name: string; features?: string[]; [key: string]: any })[];
   features?: Record<string, VcpkgFeature>;
   supports?: string;
 }
 
 export interface VcpkgFeature {
   description: string;
-  dependencies?: string[];
+  dependencies?: (string | { name: string; features?: string[]; [key: string]: any })[];
 }
 
 export interface VcpkgPortfileInfo {

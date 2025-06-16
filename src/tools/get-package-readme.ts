@@ -13,6 +13,7 @@ import { logger } from '../utils/logger.js';
 import { createError } from '../utils/error-handler.js';
 import { validateGetPackageReadmeParams } from '../utils/validators.js';
 import { cache } from '../services/cache.js';
+import { searchPackages } from './search-packages.js';
 
 export async function getPackageReadme(params: GetPackageReadmeParams): Promise<PackageReadmeResponse> {
   // Validate parameters
@@ -31,6 +32,39 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
       logger.debug('Returning cached package README', { package_name });
       return cached;
     }
+
+    // First, search to verify package exists
+    logger.debug(`Searching for package existence: ${package_name}`);
+    const searchResult = await searchPackages({ query: package_name, limit: 10 });
+    
+    // Check if the exact package name exists in search results
+    const exactMatch = searchResult.packages.find(pkg => pkg.name === package_name);
+    if (!exactMatch) {
+      logger.info(`Package '${package_name}' not found in vcpkg registry`);
+      
+      // Return response with exists: false according to specification
+      const notFoundResponse: PackageReadmeResponse = {
+        package_name,
+        version: version || 'latest',
+        description: '',
+        readme_content: '',
+        usage_examples: [],
+        installation: generateInstallationInfo(package_name),
+        basic_info: {
+          name: package_name,
+          version: version || 'latest',
+          description: '',
+          license: '',
+          author: '',
+          keywords: [],
+        },
+        exists: false,
+      };
+      
+      return notFoundResponse;
+    }
+    
+    logger.debug(`Package found in search results: ${package_name}`);
 
     // Resolve version
     const resolvedVersion = await versionResolver.resolveVersion(package_name, version);
@@ -96,6 +130,7 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
       installation: generateInstallationInfo(package_name),
       basic_info: generateBasicInfo(portInfo, resolvedVersion),
       repository: generateRepositoryInfo(portfileInfo),
+      exists: true,
     };
 
     // Cache the response
