@@ -1,5 +1,11 @@
 # vcpkg Package README MCP Server
 
+[![npm version](https://img.shields.io/npm/v/vcpkg-package-readme-mcp-server)](https://www.npmjs.com/package/vcpkg-package-readme-mcp-server)
+[![npm downloads](https://img.shields.io/npm/dm/vcpkg-package-readme-mcp-server)](https://www.npmjs.com/package/vcpkg-package-readme-mcp-server)
+[![GitHub stars](https://img.shields.io/github/stars/naoto24kawa/package-readme-mcp-servers)](https://github.com/naoto24kawa/package-readme-mcp-servers)
+[![GitHub issues](https://img.shields.io/github/issues/naoto24kawa/package-readme-mcp-servers)](https://github.com/naoto24kawa/package-readme-mcp-servers/issues)
+[![license](https://img.shields.io/npm/l/vcpkg-package-readme-mcp-server)](https://github.com/naoto24kawa/package-readme-mcp-servers/blob/main/LICENSE)
+
 A Model Context Protocol (MCP) server that provides tools for fetching vcpkg package information, README content, and usage examples. This server allows AI assistants to help developers discover and understand C++ packages available through the vcpkg package manager.
 
 ## Features
