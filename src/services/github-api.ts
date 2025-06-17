@@ -26,6 +26,8 @@ export class GitHubApiClient {
 
       if (this.token) {
         headers['Authorization'] = `token ${this.token}`;
+      } else {
+        logger.warn('GITHUB_TOKEN not set, using unauthenticated requests (rate limited)');
       }
 
       const response = await fetch(url, {
