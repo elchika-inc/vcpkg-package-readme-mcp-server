@@ -5,14 +5,13 @@ import type {
 } from '../types/index.js';
 import { githubApi } from '../services/github-api.js';
 import { logger } from '../utils/logger.js';
-import { validateSearchPackagesParams } from '../utils/validators.js';
 import { cache } from '../services/cache.js';
+import { validateSearchPackagesParams } from '../utils/validators.js';
 
 export async function searchPackages(params: SearchPackagesParams): Promise<SearchPackagesResponse> {
-  // Validate parameters
-  validateSearchPackagesParams(params);
+  const validatedParams = validateSearchPackagesParams(params);
   
-  const { query, limit = 20, quality, popularity } = params;
+  const { query, limit = 20, quality, popularity } = validatedParams;
   
   logger.info('Searching packages', { query, limit, quality, popularity });
 

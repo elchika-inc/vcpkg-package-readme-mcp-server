@@ -11,15 +11,14 @@ import { readmeParser } from '../services/readme-parser.js';
 import { versionResolver } from '../services/version-resolver.js';
 import { logger } from '../utils/logger.js';
 import { createError } from '../utils/error-handler.js';
-import { validateGetPackageReadmeParams } from '../utils/validators.js';
 import { cache } from '../services/cache.js';
 import { searchPackages } from './search-packages.js';
+import { validateGetPackageReadmeParams } from '../utils/validators.js';
 
 export async function getPackageReadme(params: GetPackageReadmeParams): Promise<PackageReadmeResponse> {
-  // Validate parameters
-  validateGetPackageReadmeParams(params);
+  const validatedParams = validateGetPackageReadmeParams(params);
   
-  const { package_name, version, include_examples = true } = params;
+  const { package_name, version, include_examples = true } = validatedParams;
   
   logger.info('Getting package README', { package_name, version, include_examples });
 

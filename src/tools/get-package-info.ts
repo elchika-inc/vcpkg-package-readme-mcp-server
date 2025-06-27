@@ -8,14 +8,13 @@ import { githubApi } from '../services/github-api.js';
 import { versionResolver } from '../services/version-resolver.js';
 import { logger } from '../utils/logger.js';
 // import { createError } from '../utils/error-handler.js';
-import { validateGetPackageInfoParams } from '../utils/validators.js';
 import { cache } from '../services/cache.js';
+import { validateGetPackageInfoParams } from '../utils/validators.js';
 
 export async function getPackageInfo(params: GetPackageInfoParams): Promise<PackageInfoResponse> {
-  // Validate parameters
-  validateGetPackageInfoParams(params);
+  const validatedParams = validateGetPackageInfoParams(params);
   
-  const { package_name, include_dependencies = true, include_dev_dependencies = false } = params;
+  const { package_name, include_dependencies = true, include_dev_dependencies = false } = validatedParams;
   
   logger.info('Getting package info', { package_name, include_dependencies, include_dev_dependencies });
 
