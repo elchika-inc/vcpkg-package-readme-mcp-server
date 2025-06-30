@@ -3,6 +3,10 @@ import type {
   PackageInfoResponse,
   DownloadStats,
   RepositoryInfo,
+  VcpkgPortInfo,
+  VcpkgPortfileInfo,
+  VcpkgDependency,
+  GitHubRepository,
 } from '../types/index.js';
 import { githubApi } from '../services/github-api.js';
 import { versionResolver } from '../services/version-resolver.js';
@@ -10,6 +14,7 @@ import { logger } from '../utils/logger.js';
 // import { createError } from '../utils/error-handler.js';
 import { cache } from '../services/cache.js';
 import { validateGetPackageInfoParams } from '../utils/validators.js';
+import { generateRepositoryInfo, getAuthor, getLicense, generateKeywords } from '../utils/vcpkg-helpers.js';
 
 export async function getPackageInfo(params: GetPackageInfoParams): Promise<PackageInfoResponse> {
   const validatedParams = validateGetPackageInfoParams(params);
@@ -62,13 +67,13 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
     const repository = generateRepositoryInfo(portfileInfo);
 
     // Get upstream repository info if available
-    let upstreamRepo: any = null;
+    let upstreamRepo: GitHubRepository | null = null;
     if (portfileInfo?.vcpkg_from_github) {
       try {
         const repoUrl = `https://api.github.com/repos/${portfileInfo.vcpkg_from_github.owner}/${portfileInfo.vcpkg_from_github.repo}`;
         const response = await fetch(repoUrl);
         if (response.ok) {
-          upstreamRepo = await response.json();
+          upstreamRepo = await response.json() as GitHubRepository;
         }
       } catch (error) {
         logger.debug('Failed to get upstream repository info', { package_name, error });
@@ -88,7 +93,7 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
           depName = dep.split('[')[0] || dep;
         } else if (typeof dep === 'object' && dep !== null && 'name' in dep) {
           // Handle dependency objects like { "name": "boost", "features": ["system"] }
-          depName = (dep as any).name;
+          depName = (dep as VcpkgDependency).name;
         } else {
           // Skip invalid dependency entries
           continue;
@@ -112,7 +117,7 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
       description: portInfo.description || '',
       author: getAuthor(portInfo, upstreamRepo),
       license: getLicense(upstreamRepo) || 'See upstream repository',
-      keywords: getKeywords(portInfo, upstreamRepo),
+      keywords: generateKeywords(portInfo, upstreamRepo),
       dependencies,
       dev_dependencies: devDependencies,
       download_stats: downloadStats,
@@ -136,51 +141,8 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
   }
 }
 
-function generateRepositoryInfo(portfileInfo: any): RepositoryInfo | undefined {
-  if (portfileInfo?.vcpkg_from_github) {
-    return {
-      type: 'git',
-      url: `https://github.com/${portfileInfo.vcpkg_from_github.owner}/${portfileInfo.vcpkg_from_github.repo}`,
-    };
-  }
-  return {
-    type: 'git',
-    url: 'https://github.com/Microsoft/vcpkg',
-    directory: `ports/${portfileInfo?.name || 'unknown'}`,
-  };
-}
 
-function getAuthor(_portInfo: any, upstreamRepo: any): string {
-  if (upstreamRepo?.owner?.login) {
-    return upstreamRepo.owner.login;
-  }
-  return 'vcpkg community';
-}
-
-function getLicense(upstreamRepo: any): string | undefined {
-  if (upstreamRepo?.license?.name) {
-    return upstreamRepo.license.name;
-  }
-  return undefined;
-}
-
-function getKeywords(_portInfo: any, upstreamRepo: any): string[] {
-  const keywords = ['vcpkg', 'cpp', 'c++', 'native'];
-  
-  // Add language from upstream repo
-  if (upstreamRepo?.language) {
-    keywords.push(upstreamRepo.language.toLowerCase());
-  }
-  
-  // Add topics from upstream repo
-  if (upstreamRepo?.topics && Array.isArray(upstreamRepo.topics)) {
-    keywords.push(...upstreamRepo.topics.slice(0, 5)); // Limit to 5 topics
-  }
-  
-  return [...new Set(keywords)]; // Remove duplicates
-}
-
-function generateDownloadStats(upstreamRepo: any): DownloadStats {
+function generateDownloadStats(upstreamRepo: GitHubRepository | null): DownloadStats {
   // Since vcpkg doesn't have download stats, we'll use repository metrics as a proxy
   const baseStats = {
     last_day: 0,

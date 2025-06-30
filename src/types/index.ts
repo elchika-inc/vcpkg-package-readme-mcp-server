@@ -116,30 +116,52 @@ export interface PackageSearchResult {
 }
 
 // Vcpkg-specific types
+export interface VcpkgDependency {
+  name: string;
+  features?: string[];
+  platform?: string;
+  host?: boolean;
+}
+
 export interface VcpkgPortInfo {
   name: string;
   version: string;
   description: string;
   homepage?: string;
-  dependencies?: (string | { name: string; features?: string[]; [key: string]: any })[];
+  dependencies?: (string | VcpkgDependency)[];
   features?: Record<string, VcpkgFeature>;
   supports?: string;
 }
 
 export interface VcpkgFeature {
   description: string;
-  dependencies?: (string | { name: string; features?: string[]; [key: string]: any })[];
+  dependencies?: (string | VcpkgDependency)[];
+}
+
+export interface VcpkgGitHubSource {
+  owner: string;
+  repo: string;
+  ref: string;
+  sha512: string;
 }
 
 export interface VcpkgPortfileInfo {
-  vcpkg_from_github?: {
-    owner: string;
-    repo: string;
-    ref: string;
-    sha512: string;
-  };
+  vcpkg_from_github?: VcpkgGitHubSource;
   vcpkg_configure?: Record<string, unknown>;
   vcpkg_install?: Record<string, unknown>;
+}
+
+export interface VcpkgSearchResult {
+  name: string;
+  version: string;
+  description: string;
+  homepage?: string;
+  repository?: RepositoryInfo;
+  dependencies?: (string | VcpkgDependency)[];
+  supports?: string;
+  stars?: number;
+  forks?: number;
+  updated_at?: string;
 }
 
 // GitHub API types
@@ -181,6 +203,7 @@ export interface GitHubRepository {
   open_issues_count: number;
   license?: GitHubLicense;
   default_branch: string;
+  topics?: string[];
 }
 
 export interface GitHubUser {

@@ -5,6 +5,8 @@ import type {
   InstallationInfo,
   PackageBasicInfo,
   RepositoryInfo,
+  VcpkgPortInfo,
+  VcpkgPortfileInfo,
 } from '../types/index.js';
 import { githubApi } from '../services/github-api.js';
 import { readmeParser } from '../services/readme-parser.js';
@@ -14,131 +16,49 @@ import { createError } from '../utils/error-handler.js';
 import { cache } from '../services/cache.js';
 import { searchPackages } from './search-packages.js';
 import { validateGetPackageReadmeParams } from '../utils/validators.js';
+import { generateRepositoryInfo } from '../utils/vcpkg-helpers.js';
 
 export async function getPackageReadme(params: GetPackageReadmeParams): Promise<PackageReadmeResponse> {
   const validatedParams = validateGetPackageReadmeParams(params);
-  
   const { package_name, version, include_examples = true } = validatedParams;
   
   logger.info('Getting package README', { package_name, version, include_examples });
 
   try {
     // Check cache first
-    const cacheKey = `package_readme:${package_name}:${version || 'latest'}:${include_examples}`;
-    const cached = cache.get<PackageReadmeResponse>(cacheKey);
-    
+    const cached = await getCachedResponse(package_name, version, include_examples);
     if (cached) {
-      logger.debug('Returning cached package README', { package_name });
       return cached;
     }
 
-    // First, search to verify package exists
-    logger.debug(`Searching for package existence: ${package_name}`);
-    const searchResult = await searchPackages({ query: package_name, limit: 10 });
-    
-    // Check if the exact package name exists in search results
-    const exactMatch = searchResult.packages.find(pkg => pkg.name === package_name);
-    if (!exactMatch) {
-      logger.info(`Package '${package_name}' not found in vcpkg registry`);
-      
-      // Return response with exists: false according to specification
-      const notFoundResponse: PackageReadmeResponse = {
-        package_name,
-        version: version || 'latest',
-        description: '',
-        readme_content: '',
-        usage_examples: [],
-        installation: generateInstallationInfo(package_name),
-        basic_info: {
-          name: package_name,
-          version: version || 'latest',
-          description: '',
-          license: '',
-          author: '',
-          keywords: [],
-        },
-        exists: false,
-      };
-      
-      return notFoundResponse;
-    }
-    
-    logger.debug(`Package found in search results: ${package_name}`);
-
-    // Resolve version
-    const resolvedVersion = await versionResolver.resolveVersion(package_name, version);
-    
-    // Get package info from vcpkg.json
-    const portInfo = await githubApi.getVcpkgPortInfo(package_name);
-    if (!portInfo) {
-      throw createError('PACKAGE_NOT_FOUND', `Package ${package_name} not found in vcpkg registry`);
+    // Verify package exists
+    const packageExists = await verifyPackageExists(package_name);
+    if (!packageExists) {
+      return createNotFoundResponse(package_name, version);
     }
 
-    // Get portfile info for additional details
-    const portfileInfo = await githubApi.getVcpkgPortfile(package_name);
-
+    // Get package data
+    const packageData = await getPackageData(package_name, version);
+    
     // Get README content
-    let readmeContent = await githubApi.getReadmeContent(package_name);
+    const readmeContent = await getReadmeContent(package_name, packageData.portfileInfo);
     
-    // If no README in port directory, try to get from upstream repository
-    if (!readmeContent && portfileInfo?.vcpkg_from_github) {
-      try {
-        const upstreamReadme = await githubApi.getFileContent(
-          portfileInfo.vcpkg_from_github.owner,
-          portfileInfo.vcpkg_from_github.repo,
-          'README.md'
-        );
-        
-        if (upstreamReadme.encoding === 'base64') {
-          readmeContent = Buffer.from(upstreamReadme.content, 'base64').toString('utf-8');
-        } else {
-          readmeContent = upstreamReadme.content;
-        }
-      } catch (error) {
-        logger.debug('Failed to get upstream README', { package_name, error });
-      }
-    }
-
-    // Fallback to a basic README if none found
-    if (!readmeContent) {
-      readmeContent = generateFallbackReadme(portInfo, portfileInfo);
-    }
-
-    // Clean up README content
-    const cleanedContent = readmeParser.cleanupContent(readmeContent);
-
-    // Parse usage examples
-    let usageExamples: UsageExample[] = [];
-    if (include_examples) {
-      usageExamples = readmeParser.parseUsageExamples(cleanedContent);
-      
-      // Add vcpkg-specific examples
-      usageExamples.unshift(...generateVcpkgExamples(package_name, portInfo));
-    }
-
-    // Extract description
-    const description = portInfo.description || readmeParser.extractDescription(cleanedContent);
-
-    // Build response
-    const response: PackageReadmeResponse = {
+    // Build final response
+    const response = await buildPackageReadmeResponse(
       package_name,
-      version: resolvedVersion,
-      description,
-      readme_content: cleanedContent,
-      usage_examples: usageExamples,
-      installation: generateInstallationInfo(package_name),
-      basic_info: generateBasicInfo(portInfo, resolvedVersion),
-      repository: generateRepositoryInfo(portfileInfo),
-      exists: true,
-    };
+      packageData,
+      readmeContent,
+      include_examples
+    );
 
     // Cache the response
+    const cacheKey = `package_readme:${package_name}:${version || 'latest'}:${include_examples}`;
     cache.set(cacheKey, response, 60 * 60 * 1000); // 1 hour
 
     logger.info('Successfully retrieved package README', { 
       package_name, 
-      version: resolvedVersion,
-      examples_count: usageExamples.length,
+      version: response.version,
+      examples_count: response.usage_examples.length,
     });
 
     return response;
@@ -148,7 +68,158 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
   }
 }
 
-function generateVcpkgExamples(packageName: string, portInfo: any): UsageExample[] {
+interface PackageData {
+  resolvedVersion: string;
+  portInfo: VcpkgPortInfo;
+  portfileInfo: VcpkgPortfileInfo | null;
+}
+
+async function getCachedResponse(
+  packageName: string, 
+  version: string | undefined, 
+  includeExamples: boolean
+): Promise<PackageReadmeResponse | null> {
+  const cacheKey = `package_readme:${packageName}:${version || 'latest'}:${includeExamples}`;
+  const cached = cache.get<PackageReadmeResponse>(cacheKey);
+  
+  if (cached) {
+    logger.debug('Returning cached package README', { package_name: packageName });
+    return cached;
+  }
+  
+  return null;
+}
+
+async function verifyPackageExists(packageName: string): Promise<boolean> {
+  logger.debug(`Searching for package existence: ${packageName}`);
+  const searchResult = await searchPackages({ query: packageName, limit: 10 });
+  
+  const exactMatch = searchResult.packages.find(pkg => pkg.name === packageName);
+  if (!exactMatch) {
+    logger.info(`Package '${packageName}' not found in vcpkg registry`);
+    return false;
+  }
+  
+  logger.debug(`Package found in search results: ${packageName}`);
+  return true;
+}
+
+function createNotFoundResponse(packageName: string, version: string | undefined): PackageReadmeResponse {
+  return {
+    package_name: packageName,
+    version: version || 'latest',
+    description: '',
+    readme_content: '',
+    usage_examples: [],
+    installation: generateInstallationInfo(packageName),
+    basic_info: {
+      name: packageName,
+      version: version || 'latest',
+      description: '',
+      license: '',
+      author: '',
+      keywords: [],
+    },
+    exists: false,
+  };
+}
+
+async function getPackageData(packageName: string, version: string | undefined): Promise<PackageData> {
+  // Resolve version
+  const resolvedVersion = await versionResolver.resolveVersion(packageName, version);
+  
+  // Get package info from vcpkg.json
+  const portInfo = await githubApi.getVcpkgPortInfo(packageName);
+  if (!portInfo) {
+    throw createError('PACKAGE_NOT_FOUND', `Package ${packageName} not found in vcpkg registry`);
+  }
+
+  // Get portfile info for additional details
+  const portfileInfo = await githubApi.getVcpkgPortfile(packageName);
+
+  return {
+    resolvedVersion,
+    portInfo,
+    portfileInfo,
+  };
+}
+
+async function getReadmeContent(packageName: string, portfileInfo: VcpkgPortfileInfo | null): Promise<string> {
+  // Get README content from port directory
+  let readmeContent = await githubApi.getReadmeContent(packageName);
+  
+  // If no README in port directory, try to get from upstream repository
+  if (!readmeContent && portfileInfo?.vcpkg_from_github) {
+    readmeContent = await getUpstreamReadme(packageName, portfileInfo);
+  }
+
+  return readmeContent || '';
+}
+
+async function getUpstreamReadme(packageName: string, portfileInfo: VcpkgPortfileInfo): Promise<string | null> {
+  if (!portfileInfo.vcpkg_from_github) {
+    return null;
+  }
+
+  try {
+    const upstreamReadme = await githubApi.getFileContent(
+      portfileInfo.vcpkg_from_github.owner,
+      portfileInfo.vcpkg_from_github.repo,
+      'README.md'
+    );
+    
+    if (upstreamReadme.encoding === 'base64') {
+      return Buffer.from(upstreamReadme.content, 'base64').toString('utf-8');
+    } else {
+      return upstreamReadme.content;
+    }
+  } catch (error) {
+    logger.debug('Failed to get upstream README', { package_name: packageName, error });
+    return null;
+  }
+}
+
+async function buildPackageReadmeResponse(
+  packageName: string,
+  packageData: PackageData,
+  readmeContent: string,
+  includeExamples: boolean
+): Promise<PackageReadmeResponse> {
+  // Use fallback README if none found
+  const finalReadmeContent = readmeContent || generateFallbackReadme(packageData.portInfo, packageData.portfileInfo);
+  
+  // Clean up README content
+  const cleanedContent = readmeParser.cleanupContent(finalReadmeContent);
+
+  // Parse usage examples
+  const usageExamples = includeExamples 
+    ? await generateUsageExamples(packageName, packageData.portInfo, cleanedContent)
+    : [];
+
+  // Extract description
+  const description = packageData.portInfo.description || readmeParser.extractDescription(cleanedContent);
+
+  return {
+    package_name: packageName,
+    version: packageData.resolvedVersion,
+    description,
+    readme_content: cleanedContent,
+    usage_examples: usageExamples,
+    installation: generateInstallationInfo(packageName),
+    basic_info: generateBasicInfo(packageData.portInfo, packageData.resolvedVersion),
+    repository: generateRepositoryInfo(packageData.portfileInfo),
+    exists: true,
+  };
+}
+
+async function generateUsageExamples(packageName: string, portInfo: VcpkgPortInfo, cleanedContent: string): Promise<UsageExample[]> {
+  const parsedExamples = readmeParser.parseUsageExamples(cleanedContent);
+  const vcpkgExamples = generateVcpkgExamples(packageName, portInfo);
+  
+  return [...vcpkgExamples, ...parsedExamples];
+}
+
+function generateVcpkgExamples(packageName: string, portInfo: VcpkgPortInfo): UsageExample[] {
   const examples: UsageExample[] = [];
 
   // Vcpkg install example
@@ -194,7 +265,7 @@ function generateInstallationInfo(packageName: string): InstallationInfo {
   };
 }
 
-function generateBasicInfo(portInfo: any, version: string): PackageBasicInfo {
+function generateBasicInfo(portInfo: VcpkgPortInfo, version: string): PackageBasicInfo {
   return {
     name: portInfo.name,
     version,
@@ -206,17 +277,8 @@ function generateBasicInfo(portInfo: any, version: string): PackageBasicInfo {
   };
 }
 
-function generateRepositoryInfo(portfileInfo: any): RepositoryInfo | undefined {
-  if (portfileInfo?.vcpkg_from_github) {
-    return {
-      type: 'git',
-      url: `https://github.com/${portfileInfo.vcpkg_from_github.owner}/${portfileInfo.vcpkg_from_github.repo}`,
-    };
-  }
-  return undefined;
-}
 
-function generateFallbackReadme(portInfo: any, portfileInfo: any): string {
+function generateFallbackReadme(portInfo: VcpkgPortInfo, portfileInfo: VcpkgPortfileInfo | null): string {
   let readme = `# ${portInfo.name}\n\n`;
   
   if (portInfo.description) {
